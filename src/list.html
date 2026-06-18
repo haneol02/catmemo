@@ -1,0 +1,495 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8"/>
+  <title>메모 목록</title>
+  <style>
+    * { margin:0; padding:0; box-sizing:border-box; }
+    html, body {
+      width:360px; height:520px;
+      background:transparent;
+      overflow:hidden;
+      font-family:'Segoe UI',system-ui,sans-serif;
+    }
+    .panel {
+      width:100%; height:100%;
+      background:rgba(255,255,255,.97);
+      border-radius:14px;
+      box-shadow:0 8px 32px rgba(0,0,0,.18);
+      display:flex; flex-direction:column;
+      overflow:hidden;
+    }
+    /* ── header ──────────────────────────── */
+    .header {
+      display:flex; align-items:center; gap:8px;
+      padding:0 12px; height:50px;
+      background:#fff;
+      border-bottom:1px solid #f0f0f0;
+      cursor:default; flex-shrink:0;
+    }
+    .header-icon { color:#666; flex-shrink:0; }
+    .header h2 { font:600 14px/1 inherit; color:#1a1a1a; flex:1; }
+    .header-btn {
+      width:28px; height:28px; border:none; background:transparent;
+      border-radius:8px; cursor:pointer; color:#888;
+      display:flex; align-items:center; justify-content:center;
+      transition:background .15s, color .15s; flex-shrink:0;
+    }
+    .header-btn:hover { background:#f5f5f5; color:#333; }
+    /* ── tabs ────────────────────────────── */
+    .tabs {
+      display:flex; border-bottom:1px solid #f0f0f0; flex-shrink:0;
+      padding:0 4px;
+    }
+    .tab {
+      flex:1; padding:10px 8px; font:500 12px/1 inherit; color:#999;
+      border:none; background:transparent; cursor:pointer;
+      border-bottom:2px solid transparent; margin-bottom:-1px;
+      transition:color .15s, border-color .15s;
+      display:flex; align-items:center; justify-content:center; gap:5px;
+    }
+    .tab.active { color:#1a1a1a; border-color:#f59e0b; }
+    .tab:hover:not(.active) { color:#555; }
+    .tab-cnt {
+      font:500 11px/1 inherit; color:#fff; background:#d0d0d0;
+      border-radius:10px; padding:1px 5px; min-width:16px; text-align:center;
+    }
+    .tab.active .tab-cnt { background:#f59e0b; }
+    /* ── list ────────────────────────────── */
+    .list { flex:1; overflow-y:auto; padding:6px; }
+    .list::-webkit-scrollbar { width:4px; }
+    .list::-webkit-scrollbar-thumb { background:#e0e0e0; border-radius:2px; }
+    /* ── section label (archive) ─────────── */
+    .section-label {
+      font:600 10px/1 inherit; color:#aaa; letter-spacing:.06em;
+      text-transform:uppercase; padding:8px 8px 4px;
+    }
+    /* ── memo item ───────────────────────── */
+    .memo-item {
+      display:flex; align-items:center; gap:10px;
+      padding:9px 10px 9px 0; margin-bottom:3px;
+      border-radius:10px; cursor:pointer;
+      transition:background .12s; position:relative;
+      overflow:hidden;
+    }
+    .memo-item:hover { background:rgba(0,0,0,.04); }
+    /* color strip */
+    .memo-strip {
+      width:4px; height:36px; border-radius:0 3px 3px 0; flex-shrink:0;
+    }
+    .memo-info { flex:1; min-width:0; }
+    .memo-title {
+      font:600 13px/1.25 inherit; color:#1a1a1a;
+      white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+    }
+    .memo-preview {
+      font:400 11px/1.4 inherit; color:#999; margin-top:2px;
+      white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+    }
+    /* badges */
+    .memo-badges { display:flex; gap:3px; align-items:center; flex-shrink:0; }
+    .badge {
+      display:flex; align-items:center; justify-content:center;
+      width:18px; height:18px; border-radius:5px;
+    }
+    .badge.pin   { background:#fef3c7; color:#d97706; }
+    .badge.lock  { background:#ede9fe; color:#7c3aed; }
+    /* action buttons */
+    .memo-actions { display:flex; gap:2px; flex-shrink:0; margin-right:2px; }
+    .act-btn {
+      width:26px; height:26px; border:none; background:transparent;
+      border-radius:7px; cursor:pointer; color:#c0c0c0;
+      display:flex; align-items:center; justify-content:center;
+      transition:background .12s, color .12s;
+      opacity:0; pointer-events:none;
+    }
+    .memo-item:hover .act-btn { opacity:1; pointer-events:all; }
+    .act-btn:hover { background:rgba(0,0,0,.08); color:#555; }
+    .act-btn.danger:hover { background:rgba(220,38,38,.1); color:#dc2626; }
+    /* ── select mode ────────────────────── */
+    .sel-bar {
+      display:none; align-items:center; gap:8px;
+      padding:7px 10px; background:#fff3cd;
+      border-bottom:1px solid #fde68a; flex-shrink:0;
+    }
+    .sel-bar.on { display:flex; }
+    .sel-cnt { font:600 12px/1 inherit; color:#92400e; flex:1; }
+    .sel-del-btn {
+      padding:6px 12px; border:none; border-radius:8px;
+      background:#ef4444; color:#fff; font:600 12px/1 inherit;
+      cursor:pointer; transition:background .12s;
+      display:flex; align-items:center; gap:5px;
+    }
+    .sel-del-btn:hover { background:#dc2626; }
+    .sel-del-btn:disabled { background:#ccc; cursor:default; }
+    .sel-cancel-btn {
+      padding:6px 10px; border:none; border-radius:8px;
+      background:transparent; color:#666; font:500 12px/1 inherit;
+      cursor:pointer;
+    }
+    .sel-cancel-btn:hover { background:rgba(0,0,0,.06); }
+    /* checkbox */
+    .memo-check {
+      width:18px; height:18px; flex-shrink:0; margin-left:8px;
+      accent-color:#f59e0b; cursor:pointer;
+      display:none;
+    }
+    .select-mode .memo-check { display:block; }
+    .select-mode .memo-item { cursor:default; }
+    .select-mode .act-btn { display:none !important; }
+    .memo-item.selected { background:rgba(245,158,11,.12); }
+    /* select toggle btn in header */
+    .header-btn.select-active { background:#fef3c7; color:#d97706; }
+    /* ── empty state ─────────────────────── */
+    .empty {
+      display:flex; flex-direction:column; align-items:center;
+      justify-content:center; padding:48px 24px; color:#c8c8c8; gap:10px;
+    }
+    .empty svg { opacity:.5; }
+    .empty p { font:400 13px/1.6 inherit; text-align:center; color:#bbb; }
+    /* ── footer ──────────────────────────── */
+    .footer { padding:8px 10px; border-top:1px solid #f0f0f0; flex-shrink:0; }
+    .new-btn {
+      width:100%; padding:10px; border:none; border-radius:10px;
+      background:#fbbf24; color:#333; font:600 13px/1 inherit;
+      cursor:pointer; transition:background .15s;
+      display:flex; align-items:center; justify-content:center; gap:6px;
+    }
+    .new-btn:hover { background:#f59e0b; }
+    /* ── confirm modal ───────────────────── */
+    .modal-overlay {
+      position:fixed; inset:0; background:rgba(0,0,0,.45);
+      display:flex; align-items:center; justify-content:center;
+      z-index:100; opacity:0; pointer-events:none;
+      transition:opacity .15s;
+    }
+    .modal-overlay.open { opacity:1; pointer-events:all; }
+    .modal-box {
+      background:#fff; border-radius:14px;
+      padding:24px 22px 18px; width:240px;
+      box-shadow:0 8px 32px rgba(0,0,0,.2);
+      transform:scale(.92); transition:transform .15s;
+    }
+    .modal-overlay.open .modal-box { transform:scale(1); }
+    .modal-title { font:700 14px/1 inherit; color:#1a1a1a; margin-bottom:7px; }
+    .modal-sub   { font:400 12px/1.5 inherit; color:#888; }
+    .modal-btns  { display:flex; gap:8px; margin-top:18px; }
+    .modal-cancel {
+      flex:1; padding:9px; border:1px solid #e0e0e0; border-radius:9px;
+      background:#fff; font:500 12px/1 inherit; color:#555; cursor:pointer;
+      transition:background .12s;
+    }
+    .modal-cancel:hover { background:#f8f8f8; }
+    .modal-delete {
+      flex:1; padding:9px; border:none; border-radius:9px;
+      background:#ef4444; font:600 12px/1 inherit; color:#fff; cursor:pointer;
+      transition:background .12s;
+    }
+    .modal-delete:hover { background:#dc2626; }
+  </style>
+</head>
+<body>
+<div class="panel">
+  <!-- header -->
+  <div class="header" id="header">
+    <span class="header-icon">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/>
+        <line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/>
+      </svg>
+    </span>
+    <h2>메모 목록</h2>
+    <button class="header-btn" id="btn-select" title="선택 모드">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+        <polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>
+      </svg>
+    </button>
+    <button class="header-btn" id="btn-close" title="닫기">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
+        <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+      </svg>
+    </button>
+  </div>
+
+  <!-- select bar (hidden until select mode) -->
+  <div class="sel-bar" id="sel-bar">
+    <span class="sel-cnt" id="sel-cnt">0개 선택됨</span>
+    <button class="sel-cancel-btn" id="sel-cancel">취소</button>
+    <button class="sel-del-btn" id="sel-del" disabled>
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+        <polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a1 1 0 011-1h4a1 1 0 011 1v2"/>
+      </svg>
+      삭제
+    </button>
+  </div>
+
+  <!-- tabs -->
+  <div class="tabs">
+    <button class="tab active" data-tab="active">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/>
+        <line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/>
+      </svg>
+      메모 <span class="tab-cnt" id="cnt-active"></span>
+    </button>
+    <button class="tab" data-tab="archive">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <polyline points="21 8 21 21 3 21 3 8"/><rect x="1" y="3" width="22" height="5"/><line x1="10" y1="12" x2="14" y2="12"/>
+      </svg>
+      보관함 <span class="tab-cnt" id="cnt-archive"></span>
+    </button>
+  </div>
+
+  <!-- list area -->
+  <div class="list" id="list-area"></div>
+
+  <!-- footer -->
+  <div class="footer">
+    <button class="new-btn" id="btn-new">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
+        <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+      </svg>
+      새 메모
+    </button>
+  </div>
+</div>
+
+<!-- confirm modal -->
+<div class="modal-overlay" id="modal">
+  <div class="modal-box">
+    <div class="modal-title">메모를 삭제할까요?</div>
+    <div class="modal-sub">삭제하면 복구할 수 없어요.</div>
+    <div class="modal-btns">
+      <button class="modal-cancel" id="modal-cancel">취소</button>
+      <button class="modal-delete" id="modal-ok">삭제</button>
+    </div>
+  </div>
+</div>
+
+<script type="module">
+import { getMemos, createMemo, updateMemo, deleteMemo, invalidateCache } from './store.js';
+
+const invoke = (...a) => window.__TAURI__.core.invoke(...a);
+const listen = (...a) => window.__TAURI__.event.listen(...a);
+const appWin = window.__TAURI__.window.getCurrentWindow();
+
+let currentTab = 'active';
+let selectMode = false;
+let selectedIds = new Set();
+
+// ── select mode ───────────────────────────────────────────────────────────────
+function enterSelectMode() {
+  selectMode = true; selectedIds.clear();
+  document.getElementById('list-area').classList.add('select-mode');
+  document.getElementById('sel-bar').classList.add('on');
+  document.getElementById('btn-select').classList.add('select-active');
+  updateSelBar();
+}
+function exitSelectMode() {
+  selectMode = false; selectedIds.clear();
+  document.getElementById('list-area').classList.remove('select-mode');
+  document.getElementById('sel-bar').classList.remove('on');
+  document.getElementById('btn-select').classList.remove('select-active');
+  document.querySelectorAll('.memo-item.selected').forEach(el=>el.classList.remove('selected'));
+}
+function updateSelBar() {
+  const n = selectedIds.size;
+  document.getElementById('sel-cnt').textContent = `${n}개 선택됨`;
+  const btn = document.getElementById('sel-del');
+  btn.disabled = n === 0;
+  btn.textContent = n > 0 ? `삭제 (${n})` : '삭제';
+}
+
+document.getElementById('btn-select').addEventListener('click', ()=>{
+  selectMode ? exitSelectMode() : enterSelectMode();
+});
+document.getElementById('sel-cancel').addEventListener('click', exitSelectMode);
+document.getElementById('sel-del').addEventListener('click', async ()=>{
+  if (!selectedIds.size) return;
+  const ok = await showConfirm(`${selectedIds.size}개의 메모를 삭제할까요?`);
+  if (!ok) return;
+  for (const id of selectedIds) await deleteMemo(id);
+  exitSelectMode();
+  render();
+});
+
+// ── drag header ───────────────────────────────────────────────────────────────
+document.getElementById('header').addEventListener('mousedown', async e => {
+  if (e.target.tagName === 'BUTTON' || e.target.closest('button')) return;
+  await appWin.startDragging();
+});
+
+// ── close ─────────────────────────────────────────────────────────────────────
+document.getElementById('btn-close').addEventListener('click', () => appWin.hide());
+
+// ── tabs ──────────────────────────────────────────────────────────────────────
+document.querySelectorAll('.tab').forEach(t => {
+  t.addEventListener('click', () => {
+    document.querySelectorAll('.tab').forEach(x => x.classList.remove('active'));
+    t.classList.add('active');
+    currentTab = t.dataset.tab;
+    render();
+  });
+});
+
+// ── new memo ──────────────────────────────────────────────────────────────────
+document.getElementById('btn-new').addEventListener('click', async () => {
+  const memo = await createMemo();
+  await invoke('create_memo_window', { memoId: memo.id });
+  render();
+});
+
+// ── custom confirm modal ──────────────────────────────────────────────────────
+let _resolveConfirm = null;
+function showConfirm(msg) {
+  return new Promise(resolve => {
+    _resolveConfirm = resolve;
+    if (msg) document.querySelector('#modal .modal-title').textContent = msg;
+    else document.querySelector('#modal .modal-title').textContent = '메모를 삭제할까요?';
+    document.getElementById('modal').classList.add('open');
+  });
+}
+document.getElementById('modal-cancel').addEventListener('click', () => {
+  document.getElementById('modal').classList.remove('open');
+  if (_resolveConfirm) { _resolveConfirm(false); _resolveConfirm=null; }
+});
+document.getElementById('modal-ok').addEventListener('click', () => {
+  document.getElementById('modal').classList.remove('open');
+  if (_resolveConfirm) { _resolveConfirm(true); _resolveConfirm=null; }
+});
+document.getElementById('modal').addEventListener('click', e => {
+  if (e.target === document.getElementById('modal')) {
+    document.getElementById('modal').classList.remove('open');
+    if (_resolveConfirm) { _resolveConfirm(false); _resolveConfirm=null; }
+  }
+});
+
+// ── SVG icons ─────────────────────────────────────────────────────────────────
+const ic = {
+  open:    `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>`,
+  archive: `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="21 8 21 21 3 21 3 8"/><rect x="1" y="3" width="22" height="5"/><line x1="10" y1="12" x2="14" y2="12"/></svg>`,
+  restore: `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 14 4 9 9 4"/><path d="M20 20v-7a4 4 0 0 0-4-4H4"/></svg>`,
+  trash:   `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>`,
+  pin:     `<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>`,
+  lock:    `<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>`,
+  note:    `<svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>`,
+  box:     `<svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="21 8 21 21 3 21 3 8"/><rect x="1" y="3" width="22" height="5"/></svg>`,
+};
+
+// ── render ────────────────────────────────────────────────────────────────────
+async function render() {
+  const active   = await getMemos({ archived: false });
+  const archived = await getMemos({ archived: true  });
+
+  const cntA = document.getElementById('cnt-active');
+  const cntR = document.getElementById('cnt-archive');
+  cntA.textContent = active.length  || '';
+  cntR.textContent = archived.length || '';
+
+  const items = currentTab === 'active' ? active : archived;
+  const area  = document.getElementById('list-area');
+  area.innerHTML = '';
+
+  if (!items.length) {
+    area.innerHTML = `
+      <div class="empty">
+        ${currentTab==='active' ? ic.note : ic.box}
+        <p>${currentTab==='active' ? '메모가 없어요\n고양이를 클릭해 새 메모를!' : '보관된 메모가 없어요'}</p>
+      </div>`;
+    return;
+  }
+
+  // Sort by updatedAt desc
+  items.sort((a, b) => (b.updatedAt || '').localeCompare(a.updatedAt || ''));
+
+  for (const memo of items) {
+    const el = document.createElement('div');
+    el.className = 'memo-item';
+
+    const badges = [
+      memo.isPinned    ? `<span class="badge pin"  title="고정">${ic.pin}</span>`  : '',
+      memo.isEncrypted ? `<span class="badge lock" title="암호화">${ic.lock}</span>` : '',
+    ].join('');
+
+    const previewText = memo.isEncrypted
+      ? '암호화된 메모'
+      : (memo.content || '').replace(/\n/g,' ').slice(0,40) || '내용 없음';
+
+    const color = memo.color || '#fef9c3';
+    const stripColor = darken(color);
+
+    const actionBtns = currentTab === 'active'
+      ? `<button class="act-btn" data-action="open"    title="열기">${ic.open}</button>
+         <button class="act-btn" data-action="archive" title="보관">${ic.archive}</button>`
+      : `<button class="act-btn" data-action="restore" title="복원">${ic.restore}</button>`;
+
+    el.innerHTML = `
+      <input type="checkbox" class="memo-check" data-id="${memo.id}"/>
+      <div class="memo-strip" style="background:${stripColor}"></div>
+      <div class="memo-info">
+        <div class="memo-title">${esc(memo.title || '새 메모')}</div>
+        <div class="memo-preview">${esc(previewText)}</div>
+      </div>
+      ${badges ? `<div class="memo-badges">${badges}</div>` : ''}
+      <div class="memo-actions">
+        ${actionBtns}
+        <button class="act-btn danger" data-action="delete" title="삭제">${ic.trash}</button>
+      </div>`;
+
+    // 체크박스 → 선택/해제
+    el.querySelector('.memo-check').addEventListener('change', e => {
+      if (e.target.checked) { selectedIds.add(memo.id); el.classList.add('selected'); }
+      else { selectedIds.delete(memo.id); el.classList.remove('selected'); }
+      updateSelBar();
+    });
+
+    el.addEventListener('click', async e => {
+      // 선택 모드에서는 클릭 시 체크박스 토글
+      if (selectMode) {
+        if (e.target.tagName === 'INPUT') return;
+        const cb = el.querySelector('.memo-check');
+        cb.checked = !cb.checked;
+        cb.dispatchEvent(new Event('change'));
+        return;
+      }
+      const action = e.target.closest('[data-action]')?.dataset.action;
+      if (action === 'open' || (!action && currentTab === 'active')) {
+        await invoke('create_memo_window', { memoId: memo.id });
+      } else if (action === 'archive') {
+        await updateMemo(memo.id, { isArchived: true });
+        render();
+      } else if (action === 'restore') {
+        await updateMemo(memo.id, { isArchived: false });
+        render();
+      } else if (action === 'delete') {
+        const ok = await showConfirm();
+        if (!ok) return;
+        await deleteMemo(memo.id);
+        render();
+      } else if (currentTab === 'archive') {
+        await invoke('create_memo_window', { memoId: memo.id });
+      }
+    });
+
+    area.appendChild(el);
+  }
+}
+
+function esc(s) { return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+function darken(hex) {
+  try {
+    const r = Math.max(0, parseInt(hex.slice(1,3),16) - 35);
+    const g = Math.max(0, parseInt(hex.slice(3,5),16) - 35);
+    const b = Math.max(0, parseInt(hex.slice(5,7),16) - 35);
+    return `rgb(${r},${g},${b})`;
+  } catch { return '#ccc'; }
+}
+
+// ── data-changed: re-render ───────────────────────────────────────────────────
+await listen('data-changed', () => { invalidateCache(); render(); });
+
+render();
+</script>
+</body>
+</html>

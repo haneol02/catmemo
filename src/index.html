@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8"/>
+  <title>CatMemo</title>
+  <style>
+    * { margin:0; padding:0; box-sizing:border-box; }
+    html, body {
+      width:220px; height:220px;
+      background:transparent;
+      overflow:hidden;
+      user-select:none; -webkit-user-select:none;
+    }
+    #cat-wrap { width:220px; height:220px; cursor:pointer; }
+    #cat-wrap svg { width:220px; height:220px; display:block; transform-origin:50% 62%; transition:transform 0.45s ease; }
+    @keyframes eyeBlink {
+      0%, 100% { transform: scaleY(1); }
+      30%, 65% { transform: scaleY(0.06); }
+    }
+    @keyframes eyeYawn {
+      0%   { transform: scaleY(1); }
+      20%  { transform: scaleY(0.12); }
+      65%  { transform: scaleY(0.12); }
+      100% { transform: scaleY(1); }
+    }
+    .eye-path  { transform-box:fill-box; transform-origin:center; }
+    .blinking  { animation: eyeBlink 0.28s ease forwards; }
+    .eye-shut  { transform: scaleY(0.06) !important; }
+    .yawning   { animation: eyeYawn 2.6s ease forwards; }
+    #cat-wrap svg { transform-origin:50% 62%; transition:transform 0.45s ease; }
+  </style>
+</head>
+<body>
+<div id="cat-wrap"></div>
+<script type="module">
+import { applyBreed, BREEDS } from './breeds.js';
+import { getSettings, invalidateCache } from './store.js';
+
+const invoke = (...a) => window.__TAURI__.core.invoke(...a);
+const listen  = (...a) => window.__TAURI__.event.listen(...a);
+const appWin  = window.__TAURI__.window.getCurrentWindow();
+
+// ── Eye constants ─────────────────────────────────────────────────────────────
+const EL = { x:236, y:357 }, ER = { x:357, y:362 };
+const MAX=15, SENS=50, UP_BIAS=2.5;
+
+let svgTpl='', curBreed='orange';
+let isMouseDown=false;
+let hasDragged=false;
+let dragStartX=0, dragStartY=0;
+let eventsAttached=false;
+let catPos={ x:0, y:0 };
+let lastSvgX=300, lastSvgY=300;
+
+// ── Eye movement ──────────────────────────────────────────────────────────────
+function eyeOffset(dx, dy) {
+  const sdx=dx, sdy=dy<0 ? dy*UP_BIAS : dy;
+  const d=Math.sqrt(sdx*sdx+sdy*sdy);
+  if (!d) return {x:0,y:0};
+  const r=Math.min(d/SENS,1)*MAX/d;
+  return {x:sdx*r, y:sdy*r};
+}
+
+function moveEyes(svgX, svgY) {
+  const wL=document.getElementById('eye-l-wrap');
+  const wR=document.getElementById('eye-r-wrap');
+  if (!wL||!wR) return;
+  const oL=eyeOffset(svgX-EL.x, svgY-EL.y);
+  const oR=eyeOffset(svgX-ER.x, svgY-ER.y);
+  wL.setAttribute('transform',`translate(${oL.x.toFixed(2)},${oL.y.toFixed(2)})`);
+  wR.setAttribute('transform',`translate(${oR.x.toFixed(2)},${oR.y.toFixed(2)})`);
+}
+
+function setEyesShut(shut) {
+  const eL=document.getElementById('eye-l');
+  const eR=document.getElementById('eye-r');
+  if (!eL||!eR) return;
+  eL.classList.toggle('eye-shut', shut);
+  eR.classList.toggle('eye-shut', shut);
+}
+
+// ── Global cursor tracking + custom drag ─────────────────────────────────────
+async function refreshCatPos() {
+  try {
+    const p=await appWin.outerPosition();
+    catPos={x:p.x, y:p.y};
+  } catch(e){}
+}
+
+// 눈 추적 — 커스텀 Rust 커맨드로 전역 커서 추적 (권한 불필요)
+async function pollCursor() {
+  if (isMouseDown) return;
+  try {
+    const pos=await invoke('get_cursor_pos');
+    const dpr=window.devicePixelRatio||1;
+    const scale=740/(220*dpr);
+    lastSvgX=(pos[0]-catPos.x)*scale;
+    lastSvgY=(pos[1]-catPos.y)*scale;
+    moveEyes(lastSvgX, lastSvgY);
+  } catch(_){ moveEyes(lastSvgX, lastSvgY); }
+}
+
+setInterval(pollCursor, 50);
+setInterval(refreshCatPos, 600);
+
+// ── Tail animation ────────────────────────────────────────────────────────────
+// Pivot = center of tail base extracted from path[0] outline
+// base left: (523.391, 395.799), base right: (568.886, 408.651)
+let tailT0=null;
+const TAIL_OX=546, TAIL_OY=402;
+
+function animateTail(ts) {
+  if (!tailT0) tailT0=ts;
+  const t=(ts-tailT0)/1000;
+  const angle=Math.sin(t*Math.PI*0.95)*10 + Math.sin(t*Math.PI*1.85)*4;
+  const tw=document.getElementById('tail-wrap');
+  if (tw) tw.setAttribute('transform',`rotate(${angle.toFixed(2)} ${TAIL_OX} ${TAIL_OY})`);
+  requestAnimationFrame(animateTail);
+}
+
+function injectTail(svgEl, breedKey) {
+  const old=svgEl.querySelector('#tail-wrap');
+  if (old) old.remove();
+  const breed=BREEDS[breedKey]||BREEDS.orange;
+  const bodyColor=breed.colors['#FEBD92'];
+
+  // ── Step 1: Cut the tail section out of path[0] (the main body path)
+  // path[0] starts at M523.391 395.799 and traces the tail first, ending at
+  // 568.886 408.651 before continuing with the body. Replace with a straight line.
+  const bodyPath=svgEl.querySelector('path');
+  if (bodyPath) {
+    const d=bodyPath.getAttribute('d');
+    // Replace: M523.391 395.799 [all tail curves] 568.886 408.651
+    // With:    M523.391 395.799 L568.886 408.651
+    const cut=d.replace(
+      /M523\.391 395\.799[\s\S]*?568\.886 408\.651/,
+      'M523.391 395.799 L568.886 408.651'
+    );
+    bodyPath.setAttribute('d', cut);
+  }
+
+  // ── Step 2: Inject animated tail overlay (exact tail path from original)
+  const g=document.createElementNS('http://www.w3.org/2000/svg','g');
+  g.id='tail-wrap';
+  const D=
+    'M523.391 395.799 '+
+    'C525.234 386.159 527.756 376.634 529.573 366.947 '+
+    'C534.834 338.902 538.766 308.676 536.088 280.154 '+
+    'C534.954 268.064 531.853 252.31 529.313 240.189 '+
+    'C526.011 224.422 520.775 205.412 511.688 191.986 '+
+    'C505.151 182.33 495.562 175.992 483.696 173.818 '+
+    'C462.507 169.935 424.25 175.435 409.385 156.531 '+
+    'C405.237 151.256 404.915 142.864 406.238 136.503 '+
+    'C408.705 124.634 413.58 112.791 423.878 105.675 '+
+    'C438.735 95.5221 459.288 94.8829 476.469 98.3781 '+
+    'C513.194 105.85 548.702 126.509 570.505 157.4 '+
+    'C583.509 175.823 585.106 191.08 587.451 212.586 '+
+    'C592.871 261.213 591.035 310.375 582.009 358.464 '+
+    'C578.367 377.396 574.385 390.455 568.886 408.651 Z';
+  const p=document.createElementNS('http://www.w3.org/2000/svg','path');
+  p.setAttribute('d',D);
+  p.setAttribute('fill',bodyColor);
+  g.appendChild(p);
+  // Insert right after body path
+  if (bodyPath && bodyPath.nextSibling) svgEl.insertBefore(g, bodyPath.nextSibling);
+  else svgEl.appendChild(g);
+}
+
+// ── Random idle animations ────────────────────────────────────────────────────
+function doBlink() {
+  const eL=document.getElementById('eye-l'), eR=document.getElementById('eye-r');
+  if (!eL||!eR||isMouseDown) return;
+  eL.classList.add('blinking'); eR.classList.add('blinking');
+  setTimeout(()=>{ eL.classList.remove('blinking'); eR.classList.remove('blinking'); },320);
+}
+
+function doLookAround() {
+  if (isMouseDown) return;
+  const savedX=lastSvgX, savedY=lastSvgY;
+  const side=Math.random()>0.5?1:-1;
+  const lx=370+side*(350+Math.random()*100), ly=300+(Math.random()-0.5)*120;
+  moveEyes(lx, ly);
+  setTimeout(()=>moveEyes(savedX, savedY), 900+Math.random()*700);
+}
+
+// 머리 기울기: SVG 전체를 좌우로 살짝 회전
+function doHeadTilt() {
+  if (isMouseDown) return;
+  const svgEl=document.querySelector('#cat-wrap svg');
+  if (!svgEl) return;
+  const angle=(3+Math.random()*6)*(Math.random()>0.5?1:-1);
+  svgEl.style.transform=`rotate(${angle}deg)`;
+  setTimeout(()=>{ svgEl.style.transform='rotate(0deg)'; }, 1100+Math.random()*900);
+}
+
+// 하품: 눈을 천천히 감았다 천천히 뜸
+function doYawn() {
+  if (isMouseDown) return;
+  const eL=document.getElementById('eye-l'), eR=document.getElementById('eye-r');
+  if (!eL||!eR||eL.classList.contains('eye-shut')) return;
+  eL.classList.remove('blinking'); eR.classList.remove('blinking');
+  eL.classList.add('yawning'); eR.classList.add('yawning');
+  setTimeout(()=>{ eL.classList.remove('yawning'); eR.classList.remove('yawning'); }, 2700);
+}
+
+(function schedBlink(){
+  setTimeout(()=>{ doBlink(); schedBlink(); }, 3500+Math.random()*4000);
+})();
+(function schedLook(){
+  setTimeout(()=>{ doLookAround(); schedLook(); }, 9000+Math.random()*12000);
+})();
+(function schedTilt(){
+  setTimeout(()=>{ doHeadTilt(); schedTilt(); }, 12000+Math.random()*14000);
+})();
+(function schedYawn(){
+  setTimeout(()=>{ doYawn(); schedYawn(); }, 22000+Math.random()*20000);
+})();
+
+// ── Load cat SVG ──────────────────────────────────────────────────────────────
+async function loadCat(breed) {
+  if (!svgTpl) svgTpl=await fetch('./cat.svg').then(r=>r.text());
+  curBreed=breed||curBreed;
+  let svg=applyBreed(svgTpl, curBreed);
+  svg=svg.replace(/<path id="eye-l"/, '<g id="eye-l-wrap"><path id="eye-l" class="eye-path"');
+  svg=svg.replace(/(<path id="eye-l" class="eye-path"[^>]*\/>)/, '$1</g>');
+  svg=svg.replace(/<path id="eye-r"/, '<g id="eye-r-wrap"><path id="eye-r" class="eye-path"');
+  svg=svg.replace(/(<path id="eye-r" class="eye-path"[^>]*\/>)/, '$1</g>');
+  document.getElementById('cat-wrap').innerHTML=svg;
+  const svgEl=document.querySelector('#cat-wrap svg');
+  injectTail(svgEl, curBreed);
+  attachEvents(svgEl);
+  tailT0=null;
+  requestAnimationFrame(animateTail);
+}
+
+// ── Mouth open animation ──────────────────────────────────────────────────────
+// Stretch the existing mouth paths horizontally + slightly vertically
+// (same color as original, so it blends naturally)
+function setMouthOpen(open) {
+  const svgEl=document.querySelector('#cat-wrap svg');
+  if (!svgEl) return;
+  const ma=svgEl.querySelector('#cat-mouth-a');
+  const mb=svgEl.querySelector('#cat-mouth-b');
+  if (open) {
+    // Scale mouth-a: 2x wide, 1.6x tall, anchored at its center (291, 388)
+    if (ma) ma.setAttribute('transform','translate(291 388) scale(2 1.6) translate(-291 -388)');
+    if (mb) mb.style.display='none'; // hide the small detail path while stretched
+  } else {
+    if (ma) ma.removeAttribute('transform');
+    if (mb) mb.style.display='';
+  }
+}
+
+// ── Events ────────────────────────────────────────────────────────────────────
+function attachEvents(svgEl) {
+  if (eventsAttached) return;
+  eventsAttached=true;
+
+  const openEyes=()=>{
+    isMouseDown=false; setEyesShut(false);
+    invoke('clamp_cat_window').then(refreshCatPos).catch(()=>{});
+  };
+  document.addEventListener('mouseup',   e=>{ if(e.button===0) openEyes(); });
+  window.addEventListener('pointerup',   openEyes);
+  svgEl.addEventListener('mouseenter', ()=>{ if(isMouseDown) openEyes(); });
+
+  // 드래그: mousedown 후 4px 이상 이동하면 네이티브 드래그 시작
+  svgEl.addEventListener('mousedown', e=>{
+    if (e.button===0) {
+      isMouseDown=true; hasDragged=false;
+      dragStartX=e.clientX; dragStartY=e.clientY;
+      setEyesShut(true);
+    }
+  });
+  document.addEventListener('mousemove', e=>{
+    if (!isMouseDown||hasDragged) return;
+    if (Math.abs(e.clientX-dragStartX)>4||Math.abs(e.clientY-dragStartY)>4) {
+      hasDragged=true;
+      appWin.startDragging().catch(()=>{});
+    }
+  });
+
+  // 우클릭 → 컨텍스트 메뉴
+  svgEl.addEventListener('contextmenu', async e=>{
+    e.preventDefault();
+    const dpr=window.devicePixelRatio||1;
+    await invoke('show_cat_menu', {
+      x: Math.round(e.screenX*dpr),
+      y: Math.round(e.screenY*dpr)
+    });
+  });
+
+  // SVG 위 마우스 이동 → 눈 즉시 추적
+  svgEl.addEventListener('mousemove', e=>{
+    if (isMouseDown) return;
+    const rect=svgEl.getBoundingClientRect();
+    lastSvgX=(e.clientX-rect.left)*(740/220);
+    lastSvgY=(e.clientY-rect.top)*(740/220);
+    moveEyes(lastSvgX, lastSvgY);
+  });
+}
+
+// ── Boot ──────────────────────────────────────────────────────────────────────
+await listen('breed-changed', e=>{ eventsAttached=false; loadCat(e.payload.breed); });
+await listen('data-changed',  ()=>invalidateCache());
+
+await refreshCatPos();
+const s=await getSettings();
+await loadCat(s.breed);
+</script>
+</body>
+</html>

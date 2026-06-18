@@ -1,0 +1,393 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8"/>
+  <title>메모</title>
+  <style>
+    * { margin:0; padding:0; box-sizing:border-box; }
+    html, body { width:300px; min-height:270px; background:transparent; overflow:hidden;
+                 font-family:'Segoe UI',system-ui,sans-serif; }
+
+    /* ── outer card (row) ───────────────────────── */
+    .card {
+      display:flex; flex-direction:row;
+      width:100%; min-height:270px;
+      border-radius:12px; overflow:hidden;
+      box-shadow:0 4px 20px rgba(0,0,0,.18);
+      background:var(--bg,#fef9c3);
+      position:relative;
+    }
+
+    /* ── drag bar (left strip) ──────────────────── */
+    .drag-bar {
+      width:14px; background:rgba(0,0,0,.08);
+      cursor:grab; flex-shrink:0;
+      display:flex; align-items:center; justify-content:center;
+    }
+    .drag-bar:active { cursor:grabbing; }
+    .drag-dots {
+      width:4px; height:36px;
+      background: repeating-linear-gradient(to bottom,
+        rgba(0,0,0,.25) 0,rgba(0,0,0,.25) 2px,
+        transparent 2px,transparent 5px);
+      border-radius:2px;
+    }
+
+    /* ── main column ────────────────────────────── */
+    .main { flex:1; display:flex; flex-direction:column; min-width:0; }
+
+    /* ── title bar ──────────────────────────────── */
+    .titlebar {
+      display:flex; align-items:center; gap:2px;
+      padding:0 6px 0 8px; height:36px;
+      background:rgba(0,0,0,.07); flex-shrink:0;
+      cursor:default;
+    }
+    .titlebar input {
+      flex:1; border:none; background:transparent;
+      font:600 13px/1 inherit; color:#333; outline:none;
+      cursor:text; min-width:0; padding:2px 4px;
+    }
+    .titlebar input::placeholder { color:rgba(0,0,0,.3); }
+
+    /* ── icon buttons ───────────────────────────── */
+    .ibtn {
+      width:28px; height:28px; border:none; background:transparent;
+      border-radius:6px; cursor:pointer; flex-shrink:0;
+      display:flex; align-items:center; justify-content:center;
+      transition:background .15s; color:#666;
+    }
+    .ibtn:hover { background:rgba(0,0,0,.1); }
+    .ibtn svg { width:14px; height:14px; pointer-events:none; }
+    .ibtn.pinned { color:#f59e0b; }
+    .ibtn.danger:hover { background:rgba(220,38,38,.12); color:#dc2626; }
+
+    /* ── content ────────────────────────────────── */
+    .content { flex:1; padding:8px 10px; }
+    .content textarea {
+      width:100%; height:100%; min-height:158px;
+      border:none; background:transparent; resize:none;
+      font:14px/1.6 inherit; color:#333; outline:none;
+    }
+    .content textarea::placeholder { color:rgba(0,0,0,.3); }
+
+    /* ── footer ─────────────────────────────────── */
+    .footer {
+      display:flex; align-items:center; padding:5px 8px 7px;
+      background:rgba(0,0,0,.07); flex-shrink:0; gap:6px;
+    }
+
+    /* ── color picker ───────────────────────────── */
+    .cpick { position:relative; }
+    .cpick-panel {
+      position:absolute; bottom:calc(100% + 6px); left:50%;
+      transform:translateX(-50%) translateY(4px);
+      background:#fff; border-radius:10px;
+      padding:7px 8px; display:flex; gap:7px;
+      box-shadow:0 3px 14px rgba(0,0,0,.18);
+      opacity:0; pointer-events:none;
+      transition:opacity .18s, transform .18s;
+    }
+    .cpick-panel.open {
+      opacity:1; pointer-events:auto;
+      transform:translateX(-50%) translateY(0);
+    }
+    .cpick-dot {
+      width:16px; height:16px; border-radius:50%;
+      cursor:pointer; border:2px solid transparent;
+      transition:transform .15s, border-color .15s;
+    }
+    .cpick-dot:hover { transform:scale(1.2); }
+    .cpick-dot.sel { border-color:rgba(0,0,0,.5); }
+    .cpick-btn {
+      width:24px; height:24px; border:none; cursor:pointer;
+      border-radius:50%; padding:0;
+      display:flex; align-items:center; justify-content:center;
+      transition:box-shadow .15s; position:relative;
+    }
+    .cpick-btn:hover { box-shadow:0 0 0 2px rgba(0,0,0,.25); }
+    .cpick-swatch { width:16px; height:16px; border-radius:50%; }
+
+    /* ── lock button ────────────────────────────── */
+    .lock-wrap { margin-left:auto; }
+
+    /* ── modal dialogs ──────────────────────────── */
+    .modal-bg {
+      display:none; position:absolute; inset:0;
+      background:rgba(0,0,0,.38); border-radius:12px;
+      align-items:center; justify-content:center; z-index:99;
+    }
+    .modal-bg.on { display:flex; }
+    .modal-box {
+      background:#fff; border-radius:10px;
+      padding:18px 20px; width:220px;
+      display:flex; flex-direction:column; gap:10px;
+      box-shadow:0 8px 24px rgba(0,0,0,.22);
+    }
+    .modal-box h3 { font:600 14px/1 inherit; color:#333; }
+    .modal-box p  { font:13px/1.5 inherit; color:#555; }
+    .modal-row { display:flex; gap:8px; }
+    .modal-row button {
+      flex:1; padding:8px; border:none; border-radius:7px;
+      font:13px inherit; cursor:pointer;
+    }
+    .btn-ok     { background:#fbbf24; color:#333; }
+    .btn-ok:hover    { background:#f59e0b; }
+    .btn-danger { background:#ef4444; color:#fff; }
+    .btn-danger:hover { background:#dc2626; }
+    .btn-cancel { background:#e5e7eb; color:#555; }
+    .btn-cancel:hover { background:#d1d5db; }
+  </style>
+</head>
+<body>
+<div class="card" id="card">
+  <!-- left drag bar -->
+  <div class="drag-bar" id="drag-bar"><div class="drag-dots"></div></div>
+
+  <!-- main column -->
+  <div class="main">
+    <!-- titlebar -->
+    <div class="titlebar" id="titlebar">
+      <input id="title" type="text" placeholder="제목 없음" maxlength="40" spellcheck="false"/>
+      <!-- pin -->
+      <button class="ibtn" id="btn-pin" title="고정">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <line x1="12" y1="17" x2="12" y2="22"/><path d="M5 17h14v-1.76a2 2 0 00-1.11-1.79l-1.78-.9A2 2 0 0115 10.76V6h1a2 2 0 000-4H8a2 2 0 000 4h1v4.76a2 2 0 01-1.11 1.79l-1.78.9A2 2 0 005 15.24V17z"/>
+        </svg>
+      </button>
+      <!-- minimize -->
+      <button class="ibtn" id="btn-min" title="창 내리기">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
+          <line x1="5" y1="12" x2="19" y2="12"/>
+        </svg>
+      </button>
+      <!-- archive -->
+      <button class="ibtn" id="btn-archive" title="보관">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="21 8 21 21 3 21 3 8"/><rect x="1" y="3" width="22" height="5" rx="1"/>
+          <polyline points="10 12 12 14 14 12"/><line x1="12" y1="9" x2="12" y2="14"/>
+        </svg>
+      </button>
+      <!-- delete -->
+      <button class="ibtn danger" id="btn-delete" title="삭제">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="3 6 5 6 21 6"/>
+          <path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a1 1 0 011-1h4a1 1 0 011 1v2"/>
+        </svg>
+      </button>
+    </div>
+
+    <!-- editable content -->
+    <div class="content" id="content-area">
+      <textarea id="body" placeholder="메모를 입력하세요…" spellcheck="false"></textarea>
+    </div>
+
+    <!-- footer -->
+    <div class="footer">
+      <!-- color picker -->
+      <div class="cpick" id="cpick">
+        <div class="cpick-panel" id="cpick-panel"></div>
+        <button class="cpick-btn" id="cpick-btn" title="색상 변경">
+          <div class="cpick-swatch" id="cpick-swatch"></div>
+        </button>
+      </div>
+      <!-- lock -->
+      <div class="lock-wrap">
+        <button class="ibtn" id="btn-lock" title="암호화">
+          <svg id="lock-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+            <rect x="5" y="11" width="14" height="11" rx="2"/>
+            <path d="M8 11V7a4 4 0 018 0v4"/>
+          </svg>
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- delete confirm dialog -->
+<div class="modal-bg" id="del-modal">
+  <div class="modal-box">
+    <h3>메모 삭제</h3>
+    <p>이 메모를 삭제할까요?<br>삭제 후 복구할 수 없어요.</p>
+    <div class="modal-row">
+      <button class="btn-cancel" id="del-cancel">취소</button>
+      <button class="btn-danger" id="del-ok">삭제</button>
+    </div>
+  </div>
+</div>
+
+<script type="module">
+import { getMemo, updateMemo, deleteMemo, invalidateCache } from './store.js';
+import { catEncode, catDecode } from './catcipher.js'; // both used for toggle
+
+const invoke = (...a) => window.__TAURI__.core.invoke(...a);
+const listen  = (...a) => window.__TAURI__.event.listen(...a);
+const appWin  = window.__TAURI__.window.getCurrentWindow();
+
+const COLORS = ['#fef9c3','#d1fae5','#dbeafe','#fce7f3','#ede9fe','#f3f4f6'];
+const memoId = new URLSearchParams(location.search).get('id');
+
+let memo=null, isPinned=false, isEncrypted=false, pickerOpen=false;
+
+// ── Save debounce ─────────────────────────────────────────────────────────────
+let saveTimer=null;
+function scheduleSave() {
+  clearTimeout(saveTimer);
+  saveTimer=setTimeout(async ()=>{
+    if (!memo||isEncrypted) return;
+    await updateMemo(memoId,{
+      title:   document.getElementById('title').value||'새 메모',
+      content: document.getElementById('body').value,
+    });
+  }, 600);
+}
+
+// ── Color picker ──────────────────────────────────────────────────────────────
+const panel = document.getElementById('cpick-panel');
+COLORS.forEach(c=>{
+  const d=document.createElement('div');
+  d.className='cpick-dot'; d.style.background=c; d.title=c;
+  d.addEventListener('click', async ()=>{
+    setColor(c); closeColorPicker();
+    await updateMemo(memoId,{color:c});
+  });
+  panel.appendChild(d);
+});
+
+document.getElementById('cpick-btn').addEventListener('click', e=>{
+  e.stopPropagation();
+  pickerOpen=!pickerOpen;
+  panel.classList.toggle('open', pickerOpen);
+});
+document.addEventListener('click', ()=>{ if(pickerOpen){ pickerOpen=false; panel.classList.remove('open'); }});
+
+function closeColorPicker(){ pickerOpen=false; panel.classList.remove('open'); }
+
+function setColor(c) {
+  document.getElementById('card').style.setProperty('--bg', c);
+  document.getElementById('cpick-swatch').style.background=c;
+  const rgb=hexToRgb(c);
+  panel.querySelectorAll('.cpick-dot').forEach(d=>{
+    d.classList.toggle('sel', d.style.background===c||d.style.background===rgb);
+  });
+}
+function hexToRgb(h){
+  const r=parseInt(h.slice(1,3),16),g=parseInt(h.slice(3,5),16),b=parseInt(h.slice(5,7),16);
+  return `rgb(${r}, ${g}, ${b})`;
+}
+
+// ── Pin ───────────────────────────────────────────────────────────────────────
+document.getElementById('btn-pin').addEventListener('click', async ()=>{
+  isPinned=!isPinned;
+  document.getElementById('btn-pin').classList.toggle('pinned',isPinned);
+  await appWin.setAlwaysOnTop(isPinned);
+  await updateMemo(memoId,{isPinned});
+});
+
+// ── Minimize ──────────────────────────────────────────────────────────────────
+document.getElementById('btn-min').addEventListener('click',()=>appWin.hide());
+
+// ── Archive ───────────────────────────────────────────────────────────────────
+document.getElementById('btn-archive').addEventListener('click', async ()=>{
+  clearTimeout(saveTimer);
+  const patch = { isArchived:true, title:document.getElementById('title').value||'새 메모' };
+  if (!isEncrypted) patch.content = document.getElementById('body').value;
+  await updateMemo(memoId, patch);
+  await appWin.close();
+});
+
+// ── Delete (custom dialog) ────────────────────────────────────────────────────
+document.getElementById('btn-delete').addEventListener('click',()=>{
+  document.getElementById('del-modal').classList.add('on');
+});
+document.getElementById('del-cancel').addEventListener('click',()=>{
+  document.getElementById('del-modal').classList.remove('on');
+});
+document.getElementById('del-ok').addEventListener('click', async ()=>{
+  clearTimeout(saveTimer);
+  await deleteMemo(memoId);
+  await appWin.close();
+});
+
+// ── Drag (titlebar + drag bar) ────────────────────────────────────────────────
+async function startDragFromEl(e) {
+  if (e.target.tagName==='INPUT'||e.target.tagName==='BUTTON'||e.target.tagName==='SVG'||e.target.tagName==='path') return;
+  await appWin.startDragging();
+}
+document.getElementById('titlebar').addEventListener('mousedown', startDragFromEl);
+document.getElementById('drag-bar').addEventListener('mousedown', async ()=>{ await appWin.startDragging(); });
+
+// ── Live edit ─────────────────────────────────────────────────────────────────
+document.getElementById('title').addEventListener('input', scheduleSave);
+document.getElementById('body').addEventListener('input', scheduleSave);
+
+// ── Cat cipher toggle (in-place) ─────────────────────────────────────────────
+document.getElementById('btn-lock').addEventListener('click', async ()=>{
+  clearTimeout(saveTimer);
+  const ta = document.getElementById('body');
+  if (!isEncrypted) {
+    // Encrypt: replace textarea content with cat cipher
+    const plain = ta.value;
+    const catStr = catEncode(plain);
+    ta.value = catStr;
+    ta.readOnly = true;
+    isEncrypted = true;
+    setLockIcon(true);
+    await updateMemo(memoId,{
+      title: document.getElementById('title').value||'새 메모',
+      content: catStr, isEncrypted: true,
+    });
+  } else {
+    // Decrypt: restore original text from cat cipher
+    try {
+      const plain = catDecode(ta.value);
+      ta.value = plain;
+      ta.readOnly = false;
+      isEncrypted = false;
+      setLockIcon(false);
+      await updateMemo(memoId,{ content: plain, isEncrypted: false });
+    } catch(e) {
+      ta.value = '[냐옹...? 복호화 실패]';
+    }
+  }
+});
+
+// Locked = shackle closed; unlocked = shackle open (right side raised)
+const LOCK_PATH   = 'M8 11V7a4 4 0 018 0v4';
+const UNLOCK_PATH = 'M8 11V6a4 4 0 018 0';
+function setLockIcon(locked) {
+  const p=document.querySelector('#lock-icon path');
+  if (p) p.setAttribute('d', locked ? LOCK_PATH : UNLOCK_PATH);
+}
+
+// ── Boot ──────────────────────────────────────────────────────────────────────
+memo=await getMemo(memoId);
+if (!memo) { await appWin.close(); }
+
+document.getElementById('title').value=memo.title||'';
+setColor(memo.color||'#fef9c3');
+isPinned=!!memo.isPinned;
+document.getElementById('btn-pin').classList.toggle('pinned',isPinned);
+if (isPinned) appWin.setAlwaysOnTop(true);
+
+isEncrypted = !!memo.isEncrypted;
+const ta = document.getElementById('body');
+ta.value = memo.content || '';
+ta.readOnly = isEncrypted;
+setLockIcon(isEncrypted);
+
+await listen('data-changed', async ()=>{
+  invalidateCache();
+  const fresh=await getMemo(memoId);
+  if (!fresh){ await appWin.close(); return; }
+  const ta=document.getElementById('body');
+  if (document.activeElement===ta) return;
+  ta.value = fresh.content || '';
+  ta.readOnly = !!fresh.isEncrypted;
+  isEncrypted = !!fresh.isEncrypted;
+  setLockIcon(isEncrypted);
+  document.getElementById('title').value=fresh.title||'';
+});
+</script>
+</body>
+</html>
