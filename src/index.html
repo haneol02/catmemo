@@ -203,4 +203,110 @@ function doYawn() {
   setTimeout(()=>{ eL.classList.remove('yawning'); eR.classList.remove('yawning'); }, 2700);
 }
 
-(function 
+(function schedBlink(){
+  setTimeout(()=>{ doBlink(); schedBlink(); }, 3500+Math.random()*4000);
+})();
+(function schedLook(){
+  setTimeout(()=>{ doLookAround(); schedLook(); }, 9000+Math.random()*12000);
+})();
+(function schedTilt(){
+  setTimeout(()=>{ doHeadTilt(); schedTilt(); }, 12000+Math.random()*14000);
+})();
+(function schedYawn(){
+  setTimeout(()=>{ doYawn(); schedYawn(); }, 22000+Math.random()*20000);
+})();
+
+// ── Load cat SVG ──────────────────────────────────────────────────────────────
+async function loadCat(breed) {
+  if (!svgTpl) svgTpl=await fetch('./cat.svg').then(r=>r.text());
+  curBreed=breed||curBreed;
+  let svg=applyBreed(svgTpl, curBreed);
+  svg=svg.replace(/<path id="eye-l"/, '<g id="eye-l-wrap"><path id="eye-l" class="eye-path"');
+  svg=svg.replace(/(<path id="eye-l" class="eye-path"[^>]*\/>)/, '$1</g>');
+  svg=svg.replace(/<path id="eye-r"/, '<g id="eye-r-wrap"><path id="eye-r" class="eye-path"');
+  svg=svg.replace(/(<path id="eye-r" class="eye-path"[^>]*\/>)/, '$1</g>');
+  document.getElementById('cat-wrap').innerHTML=svg;
+  const svgEl=document.querySelector('#cat-wrap svg');
+  injectTail(svgEl, curBreed);
+  attachEvents(svgEl);
+  tailT0=null;
+  requestAnimationFrame(animateTail);
+}
+
+// ── Mouth open animation ──────────────────────────────────────────────────────
+// Stretch the existing mouth paths horizontally + slightly vertically
+// (same color as original, so it blends naturally)
+function setMouthOpen(open) {
+  const svgEl=document.querySelector('#cat-wrap svg');
+  if (!svgEl) return;
+  const ma=svgEl.querySelector('#cat-mouth-a');
+  const mb=svgEl.querySelector('#cat-mouth-b');
+  if (open) {
+    // Scale mouth-a: 2x wide, 1.6x tall, anchored at its center (291, 388)
+    if (ma) ma.setAttribute('transform','translate(291 388) scale(2 1.6) translate(-291 -388)');
+    if (mb) mb.style.display='none'; // hide the small detail path while stretched
+  } else {
+    if (ma) ma.removeAttribute('transform');
+    if (mb) mb.style.display='';
+  }
+}
+
+// ── Events ────────────────────────────────────────────────────────────────────
+function attachEvents(svgEl) {
+  if (eventsAttached) return;
+  eventsAttached=true;
+
+  const openEyes=()=>{
+    isMouseDown=false; setEyesShut(false);
+    invoke('clamp_cat_window').then(refreshCatPos).catch(()=>{});
+  };
+  document.addEventListener('mouseup',   e=>{ if(e.button===0) openEyes(); });
+  window.addEventListener('pointerup',   openEyes);
+  svgEl.addEventListener('mouseenter', ()=>{ if(isMouseDown) openEyes(); });
+
+  // 드래그: mousedown 후 4px 이상 이동하면 네이티브 드래그 시작
+  svgEl.addEventListener('mousedown', e=>{
+    if (e.button===0) {
+      isMouseDown=true; hasDragged=false;
+      dragStartX=e.clientX; dragStartY=e.clientY;
+      setEyesShut(true);
+    }
+  });
+  document.addEventListener('mousemove', e=>{
+    if (!isMouseDown||hasDragged) return;
+    if (Math.abs(e.clientX-dragStartX)>4||Math.abs(e.clientY-dragStartY)>4) {
+      hasDragged=true;
+      appWin.startDragging().catch(()=>{});
+    }
+  });
+
+  // 우클릭 → 컨텍스트 메뉴
+  svgEl.addEventListener('contextmenu', async e=>{
+    e.preventDefault();
+    const dpr=window.devicePixelRatio||1;
+    await invoke('show_cat_menu', {
+      x: Math.round(e.screenX*dpr),
+      y: Math.round(e.screenY*dpr)
+    });
+  });
+
+  // SVG 위 마우스 이동 → 눈 즉시 추적
+  svgEl.addEventListener('mousemove', e=>{
+    if (isMouseDown) return;
+    const rect=svgEl.getBoundingClientRect();
+    lastSvgX=(e.clientX-rect.left)*(740/220);
+    lastSvgY=(e.clientY-rect.top)*(740/220);
+    moveEyes(lastSvgX, lastSvgY);
+  });
+}
+
+// ── Boot ──────────────────────────────────────────────────────────────────────
+await listen('breed-changed', e=>{ eventsAttached=false; loadCat(e.payload.breed); });
+await listen('data-changed',  ()=>invalidateCache());
+
+await refreshCatPos();
+const s=await getSettings();
+await loadCat(s.breed);
+</script>
+</body>
+</html>
