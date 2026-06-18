@@ -226,19 +226,4 @@ function hexToRgb(hex) {
 // ── save ──────────────────────────────────────────────────────────────────────
 document.getElementById('save-btn').addEventListener('click', async () => {
   await saveSettings({ breed: selBreed, defaultColor: selColor });
-  await emit('breed-changed', { breed: selBreed });
-  const msg = document.getElementById('saved-msg');
-  msg.textContent = '저장됐어요! 골골골…';
-  setTimeout(() => { msg.textContent = ''; }, 2000);
-});
-
-// ── boot ──────────────────────────────────────────────────────────────────────
-const s = await getSettings();
-selBreed = s.breed || 'orange';
-selColor = s.defaultColor || '#fef9c3';
-
-buildColorRow();
-await buildBreedGrid();
-</script>
-</body>
-</html>
+  
