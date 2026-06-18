@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8"/>
+  <title>고양이어 번역기</title>
+  <style>
+    * { margin:0; padding:0; box-sizing:border-box; }
+    html, body {
+      width:320px; height:380px;
+      background:transparent;
+      overflow:hidden;
+      font-family:'Segoe UI',system-ui,sans-serif;
+    }
+    .panel {
+      width:100%; height:100%;
+      background:rgba(255,255,255,.97);
+      border-radius:14px;
+      box-shadow:0 6px 28px rgba(0,0,0,.18);
+      display:flex; flex-direction:column;
+      overflow:hidden;
+    }
+    /* ── header ─────────────────────────────────── */
+    .header {
+      display:flex; align-items:center;
+      padding:0 14px; height:46px;
+      border-bottom:1px solid #eee;
+      flex-shrink:0;
+      cursor:default;
+    }
+    .header-icon {
+      width:20px; height:20px; margin-right:8px;
+      color:#888; flex-shrink:0;
+      display:flex; align-items:center; justify-content:center;
+    }
+    .header-icon svg { width:18px; height:18px; }
+    .header h2 { font:600 14px/1 inherit; color:#222; flex:1; }
+    .header-btn {
+      width:28px; height:28px; border:none; background:transparent;
+      border-radius:7px; cursor:pointer;
+      display:flex; align-items:center; justify-content:center;
+      transition:background .15s; color:#555;
+    }
+    .header-btn svg { width:14px; height:14px; }
+    .header-btn:hover { background:rgba(0,0,0,.07); }
+    /* ── body ────────────────────────────────────── */
+    .body { flex:1; display:flex; flex-direction:column; padding:14px; gap:10px; overflow:hidden; }
+    /* ── direction toggle ────────────────────────── */
+    .dir-toggle {
+      display:flex; border-radius:8px; overflow:hidden;
+      border:1px solid #e0e0e0; flex-shrink:0;
+    }
+    .dir-btn {
+      flex:1; border:none; background:transparent;
+      padding:7px 6px; font:500 11px/1 'Segoe UI',sans-serif;
+      color:#888; cursor:pointer; transition:background .15s, color .15s;
+    }
+    .dir-btn.active { background:#f5f0ff; color:#7c4dff; }
+    .dir-btn:first-child { border-right:1px solid #e0e0e0; }
+    /* ── textarea section ────────────────────────── */
+    .ta-section { display:flex; flex-direction:column; gap:5px; flex:1; min-height:0; }
+    .ta-label { font:600 11px/1 inherit; color:#999; letter-spacing:.04em; text-transform:uppercase; }
+    textarea {
+      flex:1; resize:none; border:1px solid #e0e0e0; border-radius:8px;
+      padding:9px 10px; font:13px/1.55 'Segoe UI',sans-serif; color:#333;
+      background:#fafafa; outline:none; transition:border-color .15s;
+      min-height:0;
+    }
+    textarea:focus { border-color:#b39ddb; background:#fff; }
+    textarea[readonly] { background:#f5f5f5; color:#555; cursor:default; }
+    /* ── buttons ─────────────────────────────────── */
+    .row { display:flex; gap:8px; flex-shrink:0; }
+    .btn-translate {
+      flex:1; height:34px; border:none; border-radius:8px;
+      background:#7c4dff; color:#fff;
+      font:600 13px/1 'Segoe UI',sans-serif;
+      cursor:pointer; transition:background .15s;
+    }
+    .btn-translate:hover { background:#6a3de8; }
+    .btn-copy {
+      height:34px; padding:0 14px; border:1px solid #e0e0e0; border-radius:8px;
+      background:#fff; color:#666;
+      font:500 12px/1 'Segoe UI',sans-serif;
+      cursor:pointer; transition:background .15s;
+    }
+    .btn-copy:hover { background:#f0f0f0; }
+    .btn-copy.copied { color:#4caf50; border-color:#4caf50; }
+    .out-section { display:flex; flex-direction:column; gap:5px; flex:1; min-height:0; }
+    .out-header { display:flex; align-items:center; }
+    .out-header .ta-label { flex:1; }
+    .error { color:#e53935; font:12px/1.4 'Segoe UI',sans-serif; padding:4px 0; }
+  </style>
+</head>
+<body>
+<div class="panel">
+  <div class="header" data-tauri-drag-region>
+    <span class="header-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2z"/>
+      <path d="M8 9s.5-1.5 4-1.5S16 9 16 9"/>
+      <path d="M9 13c.5 1.5 5.5 1.5 6 0"/>
+      <circle cx="9" cy="11" r="1" fill="currentColor"/>
+      <circle cx="15" cy="11" r="1" fill="currentColor"/>
+    </svg></span>
+    <h2>고양이어 번역기</h2>
+    <button class="header-btn" id="btn-close">
+      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+        <line x1="3" y1="3" x2="13" y2="13"/>
+        <line x1="13" y1="3" x2="3" y2="13"/>
+      </svg>
+    </button>
+  </div>
+
+  <div class="body">
+    <div class="dir-toggle">
+      <button class="dir-btn active" id="btn-to-cat">한국어 → 고양이어</button>
+      <button class="dir-btn" id="btn-to-ko">고양이어 → 한국어</button>
+    </div>
+
+    <div class="ta-section">
+      <span class="ta-label" id="lbl-in">입력</span>
+      <textarea id="ta-in" placeholder="텍스트를 입력하세요"></textarea>
+    </div>
+
+    <div class="row">
+      <button class="btn-translate" id="btn-translate">번역</button>
+    </div>
+
+    <div class="out-section">
+      <div class="out-header">
+        <span class="ta-label" id="lbl-out">고양이어</span>
+        <button class="btn-copy" id="btn-copy">복사</button>
+      </div>
+      <textarea id="ta-out" readonly placeholder="번역 결과가 여기에 표시됩니다"></textarea>
+      <div class="error" id="err-msg" style="display:none"></div>
+    </div>
+  </div>
+</div>
+
+<script type="module">
+import { catEncode, catDecode } from './catcipher.js';
+const appWin = window.__TAURI__.window.getCurrentWindow();
+
+let toCat = true; // true = 한국어→고양이어, false = 고양이어→한국어
+
+function updateLabels() {
+  document.getElementById('lbl-in').textContent  = toCat ? '입력' : '고양이어';
+  document.getElementById('lbl-out').textContent = toCat ? '고양이어' : '번역 결과';
+  document.getElementById('ta-in').placeholder   = toCat ? '텍스트를 입력하세요' : '냥냐냐앙...';
+  document.getElementById('ta-out').placeholder  = toCat ? '번역 결과가 여기에 표시됩니다' : '번역 결과가 여기에 표시됩니다';
+}
+
+document.getElementById('btn-to-cat').addEventListener('click', () => {
+  toCat = true;
+  document.getElementById('btn-to-cat').classList.add('active');
+  document.getElementById('btn-to-ko').classList.remove('active');
+  document.getElementById('ta-in').value = '';
+  document.getElementById('ta-out').value = '';
+  document.getElementById('err-msg').style.display = 'none';
+  updateLabels();
+});
+
+document.getElementById('btn-to-ko').addEventListener('click', () => {
+  toCat = false;
+  document.getElementById('btn-to-ko').classList.add('active');
+  document.getElementById('btn-to-cat').classList.remove('active');
+  document.getElementById('ta-in').value = '';
+  document.getElementById('ta-out').value = '';
+  document.getElementById('err-msg').style.display = 'none';
+  updateLabels();
+});
+
+document.getElementById('btn-translate').addEventListener('click', () => {
+  const input = document.getElementById('ta-in').value.trim();
+  const errEl = document.getElementById('err-msg');
+  errEl.style.display = 'none';
+  if (!input) return;
+  try {
+    const result = toCat ? catEncode(input) : catDecode(input);
+    document.getElementById('ta-out').value = result;
+  } catch(e) {
+    document.getElementById('ta-out').value = '';
+    errEl.textContent = '냐옹...? 번역에 실패했어요';
+    errEl.style.display = 'block';
+  }
+});
+
+// Ctrl+Enter로도 번역
+document.getElementById('ta-in').addEventListener('keydown', e => {
+  if (e.key === 'Enter' && e.ctrlKey) {
+    document.getElementById('btn-translate').click();
+  }
+});
+
+document.getElementById('btn-copy').addEventListener('click', () => {
+  const val = document.getElementById('ta-out').value;
+  if (!val) return;
+  navigator.clipboard.writeText(val).then(() => {
+    const btn = document.getElementById('btn-copy');
+    btn.textContent = '복사됨';
+    btn.classList.add('copied');
+    setTimeout(() => { btn.textContent = '복사'; btn.classList.remove('copied'); }, 1500);
+  });
+});
+
+document.getElementById('btn-close').addEventListener('click', () => appWin.hide());
+</script>
+</body>
+</html>

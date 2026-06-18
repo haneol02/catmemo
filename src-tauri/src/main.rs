@@ -197,6 +197,30 @@ async fn open_settings_window(app: tauri::AppHandle) -> Result<(), String> {
 }
 
 #[tauri::command]
+async fn open_translator_window(app: tauri::AppHandle) -> Result<(), String> {
+    if let Some(win) = app.get_webview_window("translator") {
+        let (cat_x, cat_y) = cat_top_left(&app);
+        let (px, py) = clamped_position(&app, 320.0, 380.0, cat_x - 328.0, cat_y);
+        let _ = win.set_position(tauri::Position::Logical(tauri::LogicalPosition::new(px, py)));
+        let _ = win.show();
+        let _ = win.set_focus();
+        return Ok(());
+    }
+    let (cat_x, cat_y) = cat_top_left(&app);
+    let (px, py) = clamped_position(&app, 320.0, 380.0, cat_x - 328.0, cat_y);
+    WebviewWindowBuilder::new(&app, "translator", WebviewUrl::App("translator.html".into()))
+        .title("")
+        .inner_size(320.0, 380.0)
+        .position(px, py)
+        .decorations(false)
+        .transparent(true)
+        .shadow(false)
+        .build()
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
 async fn quit_app(app: tauri::AppHandle) {
     app.exit(0);
 }
@@ -232,99 +256,10 @@ async fn move_cat_window(app: tauri::AppHandle, x: i32, y: i32) -> Result<(), St
 #[tauri::command]
 async fn show_cat_menu(app: tauri::AppHandle, x: i32, y: i32) -> Result<(), String> {
     let mw = 170i32;
-    let mh = 290i32;
+    let mh = 322i32;
     let (sw, sh) = app
         .get_webview_window("cat").as_ref()
         .and_then(|w| w.current_monitor().ok().flatten())
         .map(|m| (m.size().width as i32, m.size().height as i32))
         .unwrap_or((1920, 1080));
-    let cx = x.max(0).min(sw - mw);
-    // 메뉴를 클릭 지점 위에 표시 (bottom = click Y)
-    let cy = (y - mh).max(0).min(sh - mh);
-    if let Some(win) = app.get_webview_window("catmenu") {
-        let _ = win.set_position(tauri::Position::Physical(tauri::PhysicalPosition::new(cx, cy)));
-        let _ = win.show();
-        let _ = win.set_focus();
-        return Ok(());
-    }
-    WebviewWindowBuilder::new(&app, "catmenu", WebviewUrl::App("catmenu.html".into()))
-        .title("")
-        .inner_size(170.0, 290.0)
-        .position(cx as f64, cy as f64)
-        .decorations(false)
-        .transparent(true)
-        .always_on_top(true)
-        .resizable(false)
-        .shadow(false)
-        .skip_taskbar(true)
-        .build()
-        .map_err(|e| e.to_string())?;
-    Ok(())
-}
-
-// ─── main ─────────────────────────────────────────────────────────────────────
-
-fn main() {
-    tauri::Builder::default()
-        .invoke_handler(tauri::generate_handler![
-            load_data,
-            save_data,
-            create_memo_window,
-            open_list_window,
-            open_settings_window,
-            show_cat_menu,
-            move_cat_window,
-            quit_app,
-            toggle_memos,
-            clamp_cat_window,
-            get_cursor_pos,
-        ])
-        .setup(|app| {
-            // System tray
-            let list_i = MenuItem::with_id(app, "tray_list", "메모 목록", true, None::<&str>)?;
-            let sep    = PredefinedMenuItem::separator(app)?;
-            let show_i = MenuItem::with_id(app, "tray_show", "보이기",   true, None::<&str>)?;
-            let hide_i = MenuItem::with_id(app, "tray_hide", "숨기기",   true, None::<&str>)?;
-            let quit_i = MenuItem::with_id(app, "tray_quit", "종료",     true, None::<&str>)?;
-            let tray_menu = Menu::with_items(app, &[&list_i, &sep, &show_i, &hide_i, &quit_i])?;
-
-            let mut tray = TrayIconBuilder::new()
-                .menu(&tray_menu)
-                .on_menu_event(|app, event| match event.id.as_ref() {
-                    "tray_quit" => app.exit(0),
-                    "tray_hide" => {
-                        if let Some(w) = app.get_webview_window("cat") { let _ = w.hide(); }
-                    }
-                    "tray_show" => {
-                        if let Some(w) = app.get_webview_window("cat") { let _ = w.show(); }
-                    }
-                    "tray_list" => {
-                        let h = app.clone();
-                        tauri::async_runtime::spawn(async move { let _ = open_list_window(h).await; });
-                    }
-                    _ => {}
-                });
-
-            // Set icon if available (avoids panic when icon files are missing)
-            if let Some(icon) = app.default_window_icon() {
-                tray = tray.icon(icon.clone());
-            }
-
-            tray.build(app)?;
-
-            // Cat window: CloseRequested → hide instead of quit
-            if let Some(cat) = app.get_webview_window("cat") {
-                let w = cat.clone();
-                cat.on_window_event(move |e| {
-                    if let tauri::WindowEvent::CloseRequested { api, .. } = e {
-                        api.prevent_close();
-                        let _ = w.hide();
-                    }
-                });
-            }
-
-            Ok(())
-        })
-        .run(tauri::generate_context!())
-        .expect("CatMemo startup failed");
-}
+    let cx = x.max(0).min(sw 
