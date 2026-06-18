@@ -1,7 +1,7 @@
 {
   "identifier": "default",
   "description": "CatMemo default capabilities",
-  "windows": ["cat", "memo-*", "list", "settings", "catmenu"],
+  "windows": ["cat", "memo-*", "list", "settings", "catmenu", "translator"],
   "permissions": [
     "core:default",
     "core:window:allow-start-dragging",
