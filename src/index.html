@@ -412,11 +412,14 @@ function startPetting() {
   const hand=document.getElementById('pet-hand');
   if (hand) { hand.style.left='52px'; hand.style.top='52px'; hand.style.display='block'; }
   petDrawFrame();
-  // 커서 위치 잠금 (움직임만 감지, 커서는 제자리)
-  document.body.requestPointerLock?.().catch?.(()=>{});
-  // 털 폴링 시작 (마우스 이동 여부와 무관하게 주기적으로 생성)
+  // 털 폴링 시작 — 고양이 몸통 랜덤 위치에서 생성
   clearInterval(petFurTimer);
-  petFurTimer=setInterval(()=>{ if (isPetting) spawnFur(PET_HEAD_X, PET_HEAD_Y); }, 130);
+  petFurTimer=setInterval(()=>{
+    if (!isPetting) return;
+    const fx=50+Math.random()*120; // x: 50~170 (몸통 가로)
+    const fy=80+Math.random()*110; // y: 80~190 (몸통 세로)
+    spawnFur(fx, fy);
+  }, 130);
   setEyesSquint(true);
 }
 
@@ -425,7 +428,6 @@ function stopPetting() {
   petIsMoving=false; petMouseSpeed=0;
   clearTimeout(petPauseTimer);
   clearInterval(petFurTimer); petFurTimer=null;
-  if (document.pointerLockElement) document.exitPointerLock?.();
   document.getElementById('cat-wrap').style.cursor='';
   const hand=document.getElementById('pet-hand');
   if (hand) hand.style.display='none';
