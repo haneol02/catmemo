@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8"/>
+  <style>
+    * { margin:0; padding:0; }
+    html, body {
+      width:100vw; height:100vh;
+      background:transparent;
+      overflow:hidden;
+      pointer-events:none;
+    }
+    #bf {
+      position:absolute;
+      width:48px; height:42px;
+      display:none;
+      pointer-events:none;
+      will-change:transform,left,top;
+    }
+    #bf svg { width:48px; height:42px; overflow:visible; }
+
+    /* ── Wing flap ─────────────────────────── */
+    @keyframes wingsFlap {
+      0%,100% { transform:scaleX(1); }
+      50%     { transform:scaleX(0.06); }
+    }
+    #wl {
+      transform-box:fill-box;
+      transform-origin:right center;
+      animation:wingsFlap var(--flap,0.22s) ease-in-out infinite;
+    }
+    #wr {
+      transform-box:fill-box;
+      transform-origin:left center;
+      animation:wingsFlap var(--flap,0.22s) ease-in-out infinite;
+    }
+  </style>
+</head>
+<body>
+<!-- 나비 SVG (모나크 스타일) -->
+<div id="bf">
+  <svg viewBox="0 0 60 50" xmlns="http://www.w3.org/2000/svg">
+    <!-- 왼쪽 날개 -->
+    <g id="wl">
+      <!-- 상단 왼쪽 -->
+      <path d="M30,23 C24,8 10,4 3,12 C-3,21 5,30 16,27 C22,25 28,24 30,23Z"
+            fill="#FF6D00" stroke="#1A237E" stroke-width="0.6"/>
+      <!-- 흰 점 -->
+      <circle cx="7" cy="16" r="2" fill="rgba(255,255,255,0.55)"/>
+      <circle cx="13" cy="10" r="1.5" fill="rgba(255,255,255,0.45)"/>
+      <!-- 하단 왼쪽 -->
+      <path d="M30,27 C24,32 11,42 8,49 C14,54 23,47 27,39 C29,35 30,31 30,27Z"
+            fill="#FF8F00" stroke="#1A237E" stroke-width="0.6"/>
+      <circle cx="14" cy="44" r="1.8" fill="rgba(255,255,255,0.5)"/>
+    </g>
+    <!-- 오른쪽 날개 -->
+    <g id="wr">
+      <!-- 상단 오른쪽 -->
+      <path d="M30,23 C36,8 50,4 57,12 C63,21 55,30 44,27 C38,25 32,24 30,23Z"
+            fill="#FF6D00" stroke="#1A237E" stroke-width="0.6"/>
+      <circle cx="53" cy="16" r="2" fill="rgba(255,255,255,0.55)"/>
+      <circle cx="47" cy="10" r="1.5" fill="rgba(255,255,255,0.45)"/>
+      <!-- 하단 오른쪽 -->
+      <path d="M30,27 C36,32 49,42 52,49 C46,54 37,47 33,39 C31,35 30,31 30,27Z"
+            fill="#FF8F00" stroke="#1A237E" stroke-width="0.6"/>
+      <circle cx="46" cy="44" r="1.8" fill="rgba(255,255,255,0.5)"/>
+    </g>
+    <!-- 몸통 -->
+    <ellipse cx="30" cy="25" rx="2.2" ry="9" fill="#1A237E"/>
+    <!-- 더듬이 -->
+    <line x1="29" y1="17" x2="21" y2="5" stroke="#1A237E" stroke-width="0.9"/>
+    <circle cx="21" cy="5" r="2" fill="#1A237E"/>
+    <line x1="31" y1="17" x2="39" y2="5" stroke="#1A237E" stroke-width="0.9"/>
+    <circle cx="39" cy="5" r="2" fill="#1A237E"/>
+  </svg>
+</div>
+
+<script type="module">
+const appWin = window.__TAURI__.window.getCurrentWindow();
+const emit   = window.__TAURI__.event.emit;
+
+// 클릭 통과
+appWin.setIgnoreCursorEvents(true).catch(()=>{});
+
+const bfEl = document.getElementById('bf');
+
+// ── 상태 ──────────────────────────────────────────────────────
+let state = 'inactive'; // inactive | entering | flying | leaving
+let bx = -200, by = -200;  // 현재 위치
+let bvx = 0, bvy = 0;       // 속도
+let btx = -200, bty = -200; // 목표
+let bAngle = 0;
+let waypointsLeft = 0;
+let lastEmit = 0;
+
+const SW = window.innerWidth, SH = window.innerHeight;
+const BF_W = 24, BF_H = 21; // 나비 중심 오프셋
+
+// ── 유틸 ─────────────────────────────────────────────────────
+function rand(a, b) { return a + Math.random() * (b - a); }
+
+function pickEdgeStart() {
+  // 화면 밖 시작점 (edge = 0:top 1:right 2:bottom 3:left)
+  const edge = Math.floor(Math.random() * 4);
+  switch(edge) {
+    case 0: return { x: rand(100, SW-100), y: -60 };
+    case 1: return { x: SW + 60,           y: rand(100, SH-100) };
+    case 2: return { x: rand(100, SW-100), y: SH + 60 };
+    case 3: return { x: -60,               y: rand(100, SH-100) };
+  }
+}
+
+function pickEdgeExit() {
+  const edge = Math.floor(Math.random() * 4);
+  switch(edge) {
+    case 0: return { x: rand(50, SW-50), y: -80 };
+    case 1: return { x: SW + 80,         y: rand(50, SH-50) };
+    case 2: return { x: rand(50, SW-50), y: SH + 80 };
+    case 3: return { x: -80,             y: rand(50, SH-50) };
+  }
+}
+
+function pickInnerPoint() {
+  return {
+    x: rand(SW * 0.1, SW * 0.9),
+    y: rand(SH * 0.1, SH * 0.85),
+  };
+}
+
+// ── 나비 시작 ─────────────────────────────────────────────────
+function startButterfly() {
+  const start = pickEdgeStart();
+  bx = start.x; by = start.y;
+  bvx = 0; bvy = 0;
+  waypointsLeft = 3 + Math.floor(Math.random() * 4); // 3~6개 경유점
+  const first = pickInnerPoint();
+  btx = first.x; bty = first.y;
+  state = 'entering';
+  bfEl.style.display = 'block';
+  emit('butterfly-update', { visible: true, x: bx + BF_W, y: by + BF_H });
+}
+
+function nextWaypoint() {
+  if (state === 'entering' || state === 'flying') {
+    waypointsLeft--;
+    if (waypointsLeft <= 0) {
+      // 나가기
+      const exit = pickEdgeExit();
+      btx = exit.x; bty = exit.y;
+      state = 'leaving';
+    } else {
+      const p = pickInnerPoint();
+      btx = p.x; bty = p.y;
+      state = 'flying';
+    }
+  } else if (state === 'leaving') {
+    // 화면 밖 → 비활성
+    state = 'inactive';
+    bfEl.style.display = 'none';
+    emit('butterfly-update', { visible: false, x: 0, y: 0 });
+    // 다음 등장 예약 (30~90초)
+    setTimeout(startButterfly, rand(30000, 90000));
+  }
+}
+
+// ── 애니메이션 루프 ────────────────────────────────────────────
+const MAX_SPD = state === 'entering' ? 5 : 3.5;
+const STEER   = 0.08;
+const ARRIVE  = 45; // px 이내면 다음 목표
+
+function loop() {
+  if (state !== 'inactive') {
+    const dx = btx - bx, dy = bty - by;
+    const dist = Math.sqrt(dx*dx + dy*dy);
+
+    // 목표 도달 체크
+    if (dist < ARRIVE) {
+      nextWaypoint();
+    } else {
+      // 조향력
+      const spd = state === 'entering' ? 4.5 : 3.2;
+      const desVx = (dx / dist) * spd;
+      const desVy = (dy / dist) * spd;
+      bvx += (desVx - bvx) * STEER;
+      bvy += (desVy - bvy) * STEER;
+
+      // 속도 제한
+      const s = Math.sqrt(bvx*bvx + bvy*bvy);
+      const maxS = state === 'entering' ? 5.0 : 3.5;
+      if (s > maxS) { bvx *= maxS/s; bvy *= maxS/s; }
+
+      // 위치 업데이트
+      bx += bvx; by += bvy;
+
+      // 날개 속도: 이동 빠를수록 더 빠르게
+      const flapMs = Math.max(120, 240 - s * 25) | 0;
+      bfEl.style.setProperty('--flap', flapMs + 'ms');
+    }
+
+    // 회전 (이동 방향)
+    if (Math.abs(bvx) > 0.2 || Math.abs(bvy) > 0.2) {
+      const targetAngle = Math.atan2(bvy, bvx) * 180 / Math.PI;
+      // 각도 부드럽게
+      let da = targetAngle - bAngle;
+      if (da > 180)  da -= 360;
+      if (da < -180) da += 360;
+      bAngle += da * 0.12;
+    }
+
+    // DOM 적용
+    bfEl.style.left = (bx - BF_W) + 'px';
+    bfEl.style.top  = (by - BF_H) + 'px';
+    bfEl.style.transform = `rotate(${bAngle.toFixed(1)}deg)`;
+
+    // 위치 이벤트 (100ms 쓰로틀)
+    const now = Date.now();
+    if (now - lastEmit > 100) {
+      lastEmit = now;
+      emit('butterfly-update', { visible: true, x: bx, y: by });
+    }
+  }
+
+  requestAnimationFrame(loop);
+}
+
+// 5~15초 후 첫 등장
+setTimeout(startButterfly, rand(5000, 15000));
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
